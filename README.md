@@ -1,8 +1,14 @@
 # EloqViz (`eloqviz/laravel-eloquent-viz`)
 
+[![Packagist Version](https://img.shields.io/packagist/v/eloqviz/laravel-eloquent-viz)](https://packagist.org/packages/eloqviz/laravel-eloquent-viz)
+[![PHP](https://img.shields.io/packagist/php-v/eloqviz/laravel-eloquent-viz)](https://packagist.org/packages/eloqviz/laravel-eloquent-viz)
+[![License](https://img.shields.io/packagist/l/eloqviz/laravel-eloquent-viz)](https://packagist.org/packages/eloqviz/laravel-eloquent-viz)
+
 **EloqViz** is a small Laravel package for developers who need to **see Eloquent relationships at a glance**—especially in large codebases with many models and edges. There is no dashboard or extra ceremony: scan `Model` classes, render a directed graph (or JSON), and focus the view when the full picture is too dense.
 
 This repository **is** the package source (PHP, Blade, bundled Cytoscape UI). Consume it via Composer inside any Laravel application; local work here uses [Orchestra Testbench](https://github.com/orchestra/testbench) for tests instead of maintaining a demo Laravel app.
+
+Available on Packagist: **[eloqviz/laravel-eloquent-viz](https://packagist.org/packages/eloqviz/laravel-eloquent-viz)**
 
 ## Expectations (what this is and isn’t)
 
