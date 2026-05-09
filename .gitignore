@@ -1,0 +1,26 @@
+/vendor/
+/node_modules/
+.phpunit.result.cache
+.phpunit.cache
+
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+/.fleet
+/.idea
+/.nova
+/.phpactor.json
+/.vscode
+/.zed
+/auth.json
+Homestead.json
+Homestead.yaml
+Thumbs.db
+
+# Cursor IDE
+/.cursor
+AGENTS.md
+boost.json
+package-lock.json

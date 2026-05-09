@@ -1,0 +1,41 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "eloqviz/laravel-eloquent-viz",
+    "version": "0.1.2",
+    "description": "Eloquent model relationship graph: JSON API, artisan command, and Cytoscape.js UI for Laravel applications.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "eloquent", "graph", "visualization", "cytoscape", "orm"],
+    "require": {
+        "php": "^8.2",
+        "laravel/framework": "^11.44|^12.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.24",
+        "orchestra/testbench": "^9.9|^10.0",
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "EloqViz\\EloquentViz\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "EloqViz\\EloquentViz\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "EloqViz\\EloquentViz\\EloquentVizServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "format": "pint --dirty"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
