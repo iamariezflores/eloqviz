@@ -1,0 +1,12 @@
+{
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "esbuild resources/js/eloquent-viz.js --bundle --outfile=public/dist/eloquent-viz.js --minify --platform=browser"
+    },
+    "devDependencies": {
+        "cytoscape": "^3.33.3",
+        "cytoscape-cose-bilkent": "^4.1.0",
+        "esbuild": "^0.25.0"
+    }
+}
