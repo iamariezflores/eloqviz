@@ -34,7 +34,7 @@ Relationships are discovered by inspecting public relation methods on each non-a
 ## Requirements
 
 - PHP **8.2+**
-- Laravel **11.44+** or **12.x**
+- Laravel **12.60+** (recommended) or **11.44+** (no longer receives security patches; Composer may block installs)
 
 ## Install in a Laravel application
 

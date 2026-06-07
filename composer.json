@@ -8,11 +8,11 @@
     "keywords": ["laravel", "eloquent", "graph", "visualization", "cytoscape", "orm"],
     "require": {
         "php": "^8.2",
-        "laravel/framework": "^11.44|^12.0"
+        "laravel/framework": "^11.44|^12.60"
     },
     "require-dev": {
         "laravel/pint": "^1.24",
-        "orchestra/testbench": "^9.9|^10.0",
+        "orchestra/testbench": "^10.0",
         "phpunit/phpunit": "^11.5"
     },
     "autoload": {
