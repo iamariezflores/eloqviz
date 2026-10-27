@@ -25,11 +25,13 @@ Available on Packagist: **[eloqviz/laravel-eloquent-viz](https://packagist.org/p
 ## What you get
 
 - **Routes (no route file)** — The service provider **registers routes in code**, so installing the package is enough (`GET /{prefix}` for the UI, `GET /{prefix}/graph` for JSON). You do **not** need to paste routes into `routes/web.php`; adjust **`route_prefix`** and **`middleware`** in config when publishing.
-- **Web UI** — Interactive graph (Cytoscape.js): stable **FQCN node ids**, configurable **labels**, search across label / FQCN / file path, **scan notes** (warnings + skipped relation probes), selection panel shows **FQCN + file** for each model.
+- **Web UI** — Interactive graph (Cytoscape.js): stable **FQCN node ids**, configurable **labels**, search across label / FQCN / file path, **scan notes** (warnings + skipped relation probes). Selecting a model lists its **table columns** (name and type) and highlights the **foreign keys** that back a relationship.
 - **JSON (`graphVersion` 2)** — Full graph payload with diagnostics (see below).
 - **Artisan** — `php artisan eloquent:graph` prints the same JSON. Use **`--path=`** repeatedly (or once) to override config directories.
 
 Relationships are discovered by inspecting public relation methods on each non-abstract Eloquent model. Each candidate method runs once inside `Model::withoutEvents()` and `Connection::pretend()` on that model’s connection so typical relations never hit the database.
+
+Column lists are a separate read. When `include_columns` is true, each node calls Laravel’s schema builder (`Schema::getColumns()` and `Schema::getForeignKeys()`) on that model’s connection. A column is highlighted when it is the foreign key backing a scanned relationship, or when the database reports a foreign-key constraint. A `*_id` column that is neither stays a normal column. If the table is missing, the model still appears and the panel says the columns could not be listed.
 
 ## Requirements
 
@@ -59,6 +61,7 @@ When **`APP_ENV=production`**, EloqViz **does not register** HTTP routes or the 
 | `models_directory` | **Legacy only** — if set, overrides `models_paths` until removed. |
 | `node_display` | `short` (default), `fqcn`, or `namespace_suffix` (`Post · App\Models`). With `short`, **duplicate basenames** in the same graph automatically get a disambiguating suffix. |
 | `include_file_paths` | When true, each node includes a `file` path (relative to the app root when under `base_path()`, otherwise absolute). |
+| `include_columns` | When true (default), each node includes `table`, `schemaStatus` (`ok`, `missing_table`, or `unavailable`), and `columns` from `Schema::getColumns()`. |
 | `scan_diagnostics` | When true, populate `warnings` and `skippedRelations` (e.g. declared relation return type but runtime did not return a `Relation`). |
 
 Configuration is **PHP only** (no `.env` keys from this package).
@@ -79,7 +82,7 @@ Configuration is **PHP only** (no `.env` keys from this package).
 ### Payload shape
 
 - **`graphVersion`**: `2`
-- **`nodes`**: `[{ "id": "<fqcn>", "label": "<display>", "fqcn": "<fqcn>", "file": "<optional relative path>" }]`
+- **`nodes`**: `[{ "id": "<fqcn>", "label": "<display>", "fqcn": "<fqcn>", "file": "<optional relative path>", "table": "posts", "schemaStatus": "ok", "columns": [{ "name": "user_id", "type": "bigint unsigned", "nullable": false, "foreignKey": true, "relations": ["belongsTo User"] }] }]`. `columns` is omitted when `include_columns` is false. `foreignKey` is true only for columns that back a relationship or a database foreign key.
 - **`edges`**: `[{ "from": "<fqcn>", "to": "<fqcn|null>", "type": "belongsTo", "smart": { ... }, "multiplicity"?: n }]`
 - **`warnings`**: `[{ "code": "...", "message": "...", ... }]`, e.g. `graph.external_model` when a related class is outside `models_paths`, or `graph.ambiguous_basename` / `graph.ambiguous_default_user` when `?model=` or default `User` focus is ambiguous.
 - **`skippedRelations`**: `[{ "model": "<declaring fqcn>", "method": "...", "reason": "..." }]` for methods that advertise a relation return type but do not yield a `Relation` at runtime.
@@ -105,6 +108,7 @@ The graph is **best-effort static + one guarded call per candidate method** unde
 - **Cross-connection / exotic relations** may still run outside the scanned model’s `pretend()` scope; **warnings** and **skipped relations** record what we could detect.
 - **Abstract** base `Model` classes are not listed as nodes.
 - Relations defined **only** outside model methods (raw query builders, arbitrary PHP) will not appear as edges.
+- **Columns** require the model’s table on its connection. `schemaStatus` is `missing_table` or `unavailable` when schema inspection cannot read them; the rest of the graph still loads.
 
 If you need a line in your internal docs: **“EloqViz shows the Eloquent surface of the codebase you configured to scan—not the full business or database story.”**
 

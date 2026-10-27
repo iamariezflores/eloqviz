@@ -40,6 +40,13 @@
         .ev-selection-grid dt:first-child { margin-top: 0; }
         .ev-selection-grid dd { margin: 0; overflow-wrap: anywhere; word-break: break-word; line-height: 1.45; font-size: 0.8125rem; }
         .ev-code { display: block; font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace; font-size: 0.75rem; background: rgba(15, 23, 42, 0.9); border: 1px solid #334155; border-radius: 0.25rem; padding: 0.35rem 0.45rem; margin-top: 0.15rem; white-space: pre-wrap; word-break: break-all; color: #e2e8f0; }
+        .ev-columns { list-style: none; margin: 0.35rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+        .ev-column { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.45rem; padding: 0.35rem 0.45rem; border: 1px solid #334155; border-radius: 0.25rem; background: rgba(2, 6, 23, 0.65); }
+        .ev-column.is-foreign-key { border-color: #a78bfa; background: rgba(167, 139, 250, 0.16); box-shadow: inset 3px 0 0 #c4b5fd; }
+        .ev-column-name { font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace; font-size: 0.75rem; font-weight: 600; color: #f8fafc; overflow-wrap: anywhere; }
+        .ev-column-type { font-family: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, Consolas, monospace; font-size: 0.68rem; color: #94a3b8; overflow-wrap: anywhere; }
+        .ev-column-fk { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em; color: #1e1b4b; background: #c4b5fd; border-radius: 999px; padding: 0.05rem 0.35rem; line-height: 1.4; }
+        .ev-column-rel { flex-basis: 100%; font-size: 0.7rem; line-height: 1.35; color: #ddd6fe; overflow-wrap: anywhere; }
         .ev-selection-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center; }
         .ev-selection-actions .ev-input { margin-top: 0; flex: 1; }
         .ev-main { position: relative; flex: 1; min-height: 420px; background: #020617; }
@@ -127,7 +134,7 @@
                     </section>
                     <p class="ev-hint">
                         Drag nodes, scroll to zoom, drag the background to pan. Shift-drag to box-select.
-                        Use filters to hide relationship types or narrow models by name. Full relation text appears in this panel when you select an edge.
+                        Use filters to hide relationship types or narrow models by name. Selecting a model lists its table columns and highlights foreign keys. Selecting a relation shows the full edge text here.
                     </p>
                 </div>
             </aside>

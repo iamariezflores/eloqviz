@@ -2,6 +2,7 @@
 
 namespace EloqViz\EloquentViz;
 
+use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use ReflectionIntersectionType;
 use ReflectionMethod;
@@ -24,9 +26,14 @@ use Throwable;
  *
  * Nodes use stable {@see class-string} ids (FQCN) with human labels from {@see config('eloquent-viz.node_display')}.
  * Related models are resolved by calling each relationship method once on a bare instance; that
- * work runs inside {@see Model::withoutEvents()} and {@see \Illuminate\Database\Connection::pretend()}
+ * work runs inside {@see Model::withoutEvents()} and {@see Connection::pretend()}
  * on the scanned model's connection so SQL is not executed. Relationship methods that query other
  * connection names are not covered by that pretend scope.
+ *
+ * When {@see config('eloquent-viz.include_columns')} is true, each node also lists columns from
+ * {@see Schema::getColumns()} on the model's connection. Those reads
+ * run outside pretend(). Foreign-key columns that back a relationship, and columns reported by
+ * {@see Schema::getForeignKeys()}, are flagged for the selection panel.
  */
 class EloquentGraphScanner
 {
@@ -36,10 +43,9 @@ class EloquentGraphScanner
      * @param  string|list<string>|null  $modelsPaths  Null reads config eloquent-viz.models_paths (and legacy models_directory).
      * @param  string|null  $selectedModel  FQCN node id, or a unique basename match; null with $applyDefaultUserFocus uses a single User model when unambiguous.
      * @param  bool  $applyDefaultUserFocus  When $selectedModel is null/empty and exactly one User exists, restrict to that component.
-     *
      * @return array{
      *     graphVersion: 2,
-     *     nodes: list<array{id: string, label: string, fqcn: string, file?: string}>,
+     *     nodes: list<array{id: string, label: string, fqcn: string, file?: string, table?: string, schemaStatus?: string, columns?: list<array{name: string, type: string, nullable: bool, foreignKey: bool, relations: list<string>}>}>,
      *     edges: list<array{from: string, to: string|null, type: string, smart?: array<string, string>, multiplicity?: positive-int}>,
      *     warnings: list<array{code: string, message: string, ...}>,
      *     skippedRelations: list<array{model: string, method: string, reason: string}>
@@ -147,6 +153,14 @@ class EloquentGraphScanner
             [$nodeRows, $edges] = $this->filterGraphToModelComponentById($nodeRows, $edges, $selectedId);
         }
 
+        if ($this->includeColumns()) {
+            $nodeRows = (new ModelColumnInspector)->decorateNodes(
+                $nodeRows,
+                $edges,
+                fn (string $fqcn): ?Model => $this->modelForSchema($fqcn),
+            );
+        }
+
         return [
             'graphVersion' => 2,
             'nodes' => $nodeRows,
@@ -211,6 +225,11 @@ class EloquentGraphScanner
     private function includeFilePaths(): bool
     {
         return (bool) config('eloquent-viz.include_file_paths', true);
+    }
+
+    private function includeColumns(): bool
+    {
+        return (bool) config('eloquent-viz.include_columns', true);
     }
 
     private function nodeDisplayMode(): string
@@ -390,7 +409,7 @@ class EloquentGraphScanner
 
     /**
      * @param  list<string>  $directories
-     * @return array<string, string>  fqcn => absolute file path
+     * @return array<string, string> fqcn => absolute file path
      */
     private function discoverModelFqcnToFileMap(array $directories): array
     {
@@ -609,7 +628,7 @@ class EloquentGraphScanner
             return true;
         }
 
-        return (strlen($path) >= 3 && ctype_alpha($path[0]) && $path[1] === ':' && ($path[2] === '\\' || $path[2] === '/'));
+        return strlen($path) >= 3 && ctype_alpha($path[0]) && $path[1] === ':' && ($path[2] === '\\' || $path[2] === '/');
     }
 
     private function fqcnFromFile(string $path): ?string
@@ -917,6 +936,25 @@ class EloquentGraphScanner
         }
 
         return $morphClass;
+    }
+
+    private function modelForSchema(string $fqcn): ?Model
+    {
+        if (! class_exists($fqcn) || ! is_subclass_of($fqcn, Model::class)) {
+            return null;
+        }
+
+        try {
+            $reflection = new ReflectionClass($fqcn);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($reflection->isAbstract()) {
+            return null;
+        }
+
+        return $this->makeBareModelForRelationProbe($reflection);
     }
 
     /**

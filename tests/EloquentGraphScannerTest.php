@@ -14,7 +14,9 @@ use EloqViz\EloquentViz\Tests\Fixtures\GraphModels\GraphWidget;
 use EloqViz\EloquentViz\Tests\Fixtures\GraphModels\Nested\GraphAddon;
 use EloqViz\EloquentViz\Tests\Stubs\ScanModels\Post;
 use EloqViz\EloquentViz\Tests\Stubs\ScanModels\User;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 
 class EloquentGraphScannerTest extends TestCase
@@ -263,6 +265,256 @@ class EloquentGraphScannerTest extends TestCase
             0,
             collect($graph['edges'])->where('from', GraphNoisy::class)->whereNull('to')->where('type', 'belongsTo')->count()
         );
+    }
+
+    #[Test]
+    public function it_lists_table_columns_and_marks_only_real_foreign_keys(): void
+    {
+        Schema::create('users', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->string('external_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('posts', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('user_id')->constrained('users');
+            $table->foreignId('organization_id')->nullable()->constrained('users');
+            $table->string('title');
+            $table->string('stripe_id')->nullable();
+            $table->timestamps();
+        });
+
+        $scanner = new EloquentGraphScanner;
+        $graph = $scanner->scan($this->stubScanModelsPath(), null, false);
+
+        $post = collect($graph['nodes'])->firstWhere('id', Post::class);
+        $user = collect($graph['nodes'])->firstWhere('id', User::class);
+
+        $this->assertIsArray($post);
+        $this->assertIsArray($user);
+        $this->assertSame('posts', $post['table']);
+        $this->assertSame('users', $user['table']);
+        $this->assertSame('ok', $post['schemaStatus']);
+        $this->assertSame('ok', $user['schemaStatus']);
+        $this->assertArrayHasKey('fqcn', $post);
+        $this->assertArrayHasKey('file', $post);
+
+        $this->assertSame(
+            ['id', 'user_id', 'organization_id', 'title', 'stripe_id', 'created_at', 'updated_at'],
+            array_column($post['columns'], 'name')
+        );
+
+        $userId = collect($post['columns'])->firstWhere('name', 'user_id');
+        $this->assertIsArray($userId);
+        $this->assertTrue($userId['foreignKey']);
+        $this->assertFalse($userId['nullable']);
+        $this->assertMatchesRegularExpression('/int/i', $userId['type']);
+        $this->assertSame(['belongsTo User', 'hasMany from User'], $userId['relations']);
+
+        $organizationId = collect($post['columns'])->firstWhere('name', 'organization_id');
+        $this->assertIsArray($organizationId);
+        $this->assertTrue($organizationId['foreignKey']);
+        $this->assertTrue($organizationId['nullable']);
+        $this->assertSame(['references users.id'], $organizationId['relations']);
+
+        $stripeId = collect($post['columns'])->firstWhere('name', 'stripe_id');
+        $this->assertIsArray($stripeId);
+        $this->assertFalse($stripeId['foreignKey']);
+        $this->assertTrue($stripeId['nullable']);
+        $this->assertSame([], $stripeId['relations']);
+
+        $title = collect($post['columns'])->firstWhere('name', 'title');
+        $this->assertIsArray($title);
+        $this->assertFalse($title['foreignKey']);
+        $this->assertMatchesRegularExpression('/char|string|text|varchar/i', $title['type']);
+
+        $externalId = collect($user['columns'])->firstWhere('name', 'external_id');
+        $this->assertIsArray($externalId);
+        $this->assertFalse($externalId['foreignKey']);
+
+        $userPrimaryKey = collect($user['columns'])->firstWhere('name', 'id');
+        $this->assertIsArray($userPrimaryKey);
+        $this->assertFalse($userPrimaryKey['foreignKey']);
+    }
+
+    #[Test]
+    public function it_marks_relationship_foreign_keys_that_do_not_use_the_id_suffix(): void
+    {
+        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'eloqviz_fk_'.uniqid('', true);
+        File::makeDirectory($dir);
+
+        $team = <<<'PHP'
+<?php
+
+namespace EloqVizDynamic;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class GraphTeam extends Model
+{
+    protected $table = 'graph_teams';
+
+    public function members(): HasMany
+    {
+        return $this->hasMany(GraphMember::class, 'team_ref');
+    }
+}
+PHP;
+
+        $member = <<<'PHP'
+<?php
+
+namespace EloqVizDynamic;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class GraphMember extends Model
+{
+    protected $table = 'graph_members';
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(GraphTeam::class, 'team_ref');
+    }
+
+    public function backupTeam(): BelongsTo
+    {
+        return $this->belongsTo(GraphTeam::class, 'backup_ref');
+    }
+}
+PHP;
+
+        try {
+            File::put($dir.DIRECTORY_SEPARATOR.'GraphTeam.php', $team);
+            File::put($dir.DIRECTORY_SEPARATOR.'GraphMember.php', $member);
+            require_once $dir.DIRECTORY_SEPARATOR.'GraphTeam.php';
+            require_once $dir.DIRECTORY_SEPARATOR.'GraphMember.php';
+
+            Schema::create('graph_teams', function (Blueprint $table): void {
+                $table->id();
+                $table->string('name');
+            });
+
+            Schema::create('graph_members', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('team_ref');
+                $table->unsignedBigInteger('backup_ref');
+                $table->unsignedBigInteger('legacy_id')->nullable();
+            });
+
+            $scanner = new EloquentGraphScanner;
+            $graph = $scanner->scan($dir, null, false);
+
+            $memberId = 'EloqVizDynamic\\GraphMember';
+            $teamId = 'EloqVizDynamic\\GraphTeam';
+            $memberNode = collect($graph['nodes'])->firstWhere('id', $memberId);
+            $this->assertIsArray($memberNode);
+            $this->assertSame('ok', $memberNode['schemaStatus']);
+
+            $belongsTo = collect($graph['edges'])->first(
+                fn (array $edge): bool => $edge['from'] === $memberId
+                    && $edge['to'] === $teamId
+                    && $edge['type'] === 'belongsTo'
+            );
+            $this->assertIsArray($belongsTo);
+            $this->assertSame(2, $belongsTo['multiplicity']);
+
+            $teamRef = collect($memberNode['columns'])->firstWhere('name', 'team_ref');
+            $backupRef = collect($memberNode['columns'])->firstWhere('name', 'backup_ref');
+            $legacyId = collect($memberNode['columns'])->firstWhere('name', 'legacy_id');
+
+            $this->assertIsArray($teamRef);
+            $this->assertTrue($teamRef['foreignKey']);
+            $this->assertSame(['belongsTo GraphTeam', 'hasMany from GraphTeam'], $teamRef['relations']);
+
+            $this->assertIsArray($backupRef);
+            $this->assertTrue($backupRef['foreignKey']);
+            $this->assertSame(['belongsTo GraphTeam'], $backupRef['relations']);
+
+            $this->assertIsArray($legacyId);
+            $this->assertFalse($legacyId['foreignKey']);
+            $this->assertSame([], $legacyId['relations']);
+
+            $teamNode = collect($graph['nodes'])->firstWhere('id', $teamId);
+            $this->assertIsArray($teamNode);
+            $teamPrimaryKey = collect($teamNode['columns'])->firstWhere('name', 'id');
+            $this->assertIsArray($teamPrimaryKey);
+            $this->assertFalse($teamPrimaryKey['foreignKey']);
+        } finally {
+            File::deleteDirectory($dir);
+        }
+    }
+
+    #[Test]
+    public function it_reports_a_missing_table_without_failing_the_scan(): void
+    {
+        $scanner = new EloquentGraphScanner;
+        $graph = $scanner->scan($this->stubScanModelsPath(), null, false);
+        $post = collect($graph['nodes'])->firstWhere('id', Post::class);
+
+        $this->assertIsArray($post);
+        $this->assertSame('posts', $post['table']);
+        $this->assertSame([], $post['columns']);
+        $this->assertSame('missing_table', $post['schemaStatus']);
+        $this->assertNotEmpty($graph['edges']);
+    }
+
+    #[Test]
+    public function it_omits_columns_when_schema_inspection_is_disabled(): void
+    {
+        config(['eloquent-viz.include_columns' => false]);
+
+        $scanner = new EloquentGraphScanner;
+        $graph = $scanner->scan($this->stubScanModelsPath(), null, false);
+        $post = collect($graph['nodes'])->firstWhere('id', Post::class);
+
+        $this->assertIsArray($post);
+        $this->assertArrayNotHasKey('columns', $post);
+        $this->assertArrayNotHasKey('table', $post);
+        $this->assertArrayNotHasKey('schemaStatus', $post);
+    }
+
+    #[Test]
+    public function it_marks_schema_unavailable_when_the_model_connection_is_missing(): void
+    {
+        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'eloqviz_offline_'.uniqid('', true);
+        File::makeDirectory($dir);
+
+        $contents = <<<'PHP'
+<?php
+
+namespace EloqVizDynamic;
+
+use Illuminate\Database\Eloquent\Model;
+
+class GraphOffline extends Model
+{
+    protected $connection = 'eloqviz_missing_connection';
+
+    protected $table = 'graph_offline';
+}
+PHP;
+
+        try {
+            $path = $dir.DIRECTORY_SEPARATOR.'GraphOffline.php';
+            File::put($path, $contents);
+            require_once $path;
+
+            $scanner = new EloquentGraphScanner;
+            $graph = $scanner->scan($dir, null, false);
+            $node = collect($graph['nodes'])->firstWhere('id', 'EloqVizDynamic\\GraphOffline');
+
+            $this->assertIsArray($node);
+            $this->assertSame('graph_offline', $node['table']);
+            $this->assertSame([], $node['columns']);
+            $this->assertSame('unavailable', $node['schemaStatus']);
+        } finally {
+            File::deleteDirectory($dir);
+        }
     }
 
     #[Test]
