@@ -179,8 +179,69 @@ function mergeAndAnnotateEdges(graph) {
     }));
 }
 
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 /**
- * @param {unknown[]} nodes graphVersion 2: `{ id, label, fqcn, file? }[]`; legacy: string ids
+ * Table column list for the selection panel. Foreign-key rows are the columns
+ * that back a relationship or a database constraint, not every *_id column.
+ *
+ * @param {Record<string, unknown>|null|undefined} record
+ */
+function columnSectionHtml(record) {
+    if (!record || typeof record !== 'object' || !Array.isArray(record.columns)) {
+        return '';
+    }
+
+    const table = String(record.table ?? '');
+    const status = String(record.schemaStatus ?? '');
+    const tableHtml = table !== '' ? `<code class="ev-code">${escapeHtml(table)}</code>` : 'Unknown';
+
+    let columnsHtml;
+    if (status === 'missing_table') {
+        columnsHtml = '<p class="ev-selection-empty">This table is not on the model connection, so columns could not be listed.</p>';
+    } else if (status === 'unavailable') {
+        columnsHtml = '<p class="ev-selection-empty">Columns could not be read for this model.</p>';
+    } else if (record.columns.length === 0) {
+        columnsHtml = '<p class="ev-selection-empty">This table has no columns.</p>';
+    } else {
+        columnsHtml = `<ul class="ev-columns">${record.columns.map((column) => columnRowHtml(column)).join('')}</ul>`;
+    }
+
+    return `<dt>Table</dt><dd>${tableHtml}</dd><dt>Columns</dt><dd>${columnsHtml}</dd>`;
+}
+
+/** @param {unknown} column */
+function columnRowHtml(column) {
+    if (!column || typeof column !== 'object') {
+        return '';
+    }
+
+    const row = /** @type {{ name?: unknown, type?: unknown, nullable?: unknown, foreignKey?: unknown, relations?: unknown }} */ (column);
+    const name = escapeHtml(row.name ?? '');
+    const type = String(row.type ?? '');
+    const nullable = row.nullable === true;
+    const isForeignKey = row.foreignKey === true;
+    const relations = Array.isArray(row.relations)
+        ? row.relations.filter((rel) => String(rel) !== '').map((rel) => escapeHtml(rel))
+        : [];
+    const typeText = [type, nullable ? 'nullable' : ''].filter(Boolean).join(' · ');
+
+    return `<li class="ev-column${isForeignKey ? ' is-foreign-key' : ''}">
+        <span class="ev-column-name">${name}</span>
+        ${typeText !== '' ? `<span class="ev-column-type">${escapeHtml(typeText)}</span>` : ''}
+        ${isForeignKey ? '<span class="ev-column-fk">FK</span>' : ''}
+        ${relations.length > 0 ? `<span class="ev-column-rel">${relations.join(' · ')}</span>` : ''}
+    </li>`;
+}
+
+/**
+ * @param {unknown[]} nodes graphVersion 2: `{ id, label, fqcn, file?, table?, columns? }[]`; legacy: string ids
  */
 function buildElements(nodes, annotatedEdges) {
     const elements = [];
@@ -558,10 +619,7 @@ async function main() {
             return;
         }
 
-        const esc = (s) => String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/"/g, '&quot;');
+        const esc = escapeHtml;
 
         if (!target) {
             selectionDetails.innerHTML = '<p class="ev-selection-empty">Click a model or relation to inspect details.</p>';
@@ -574,6 +632,9 @@ async function main() {
             const file = String(target.data('file') ?? '');
             const shortLabel = String(target.data('label') ?? modelId);
             const stats = computeDirectRelationStats(modelId);
+            const nodeRecord = (currentGraph.nodes ?? []).find(
+                (row) => row && typeof row === 'object' && String(row.id) === modelId
+            );
 
             selectionDetails.innerHTML = `
                 <dl class="ev-selection-grid">
@@ -581,6 +642,7 @@ async function main() {
                     <dt>Label</dt><dd>${esc(shortLabel)}</dd>
                     <dt>FQCN</dt><dd><code class="ev-code">${esc(fqcn)}</code></dd>
                     ${file ? `<dt>File</dt><dd><code class="ev-code">${esc(file)}</code></dd>` : ''}
+                    ${columnSectionHtml(nodeRecord)}
                     <dt>References other models</dt><dd>${stats.outgoingModels.length}</dd>
                     <dt>Referenced by other models</dt><dd>${stats.incomingModels.length}</dd>
                 </dl>

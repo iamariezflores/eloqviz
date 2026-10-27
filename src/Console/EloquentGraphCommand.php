@@ -9,7 +9,7 @@ class EloquentGraphCommand extends Command
 {
     protected $signature = 'eloquent:graph {--path=* : Absolute or project-relative models directory (repeatable; overrides config)}';
 
-    protected $description = 'Scan Eloquent models and print a JSON graph { nodes: string[], edges: {from,to,type}[] }';
+    protected $description = 'Scan Eloquent models and print a JSON relationship graph.';
 
     public function handle(EloquentGraphScanner $scanner): int
     {

@@ -59,6 +59,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Include database columns on each node
+    |--------------------------------------------------------------------------
+    |
+    | When true, each node lists columns from Schema::getColumns() on the
+    | model's connection. Columns that back a relationship, and columns
+    | reported by Schema::getForeignKeys(), are flagged so the UI can
+    | highlight them. A missing table does not fail the scan.
+    |
+    */
+
+    'include_columns' => true,
+
+    /*
+    |--------------------------------------------------------------------------
     | Scan diagnostics (warnings, skipped relation probes)
     |--------------------------------------------------------------------------
     */

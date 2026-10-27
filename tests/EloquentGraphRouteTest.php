@@ -2,6 +2,7 @@
 
 namespace EloqViz\EloquentViz\Tests;
 
+use EloqViz\EloquentViz\Tests\Fixtures\GraphModels\GraphWidget;
 use EloqViz\EloquentViz\Tests\Stubs\ScanModels\Post;
 use EloqViz\EloquentViz\Tests\Stubs\ScanModels\User;
 use PHPUnit\Framework\Attributes\Test;
@@ -20,7 +21,7 @@ class EloquentGraphRouteTest extends TestCase
             ->assertJsonStructure([
                 'graphVersion',
                 'nodes' => [
-                    '*' => ['id', 'label', 'fqcn'],
+                    '*' => ['id', 'label', 'fqcn', 'table', 'schemaStatus', 'columns'],
                 ],
                 'edges' => [
                     '*' => ['from', 'to', 'type'],
@@ -93,7 +94,7 @@ class EloquentGraphRouteTest extends TestCase
 
         $this->assertContains(User::class, $this->graphNodeIds($data));
         $this->assertNotContains(
-            \EloqViz\EloquentViz\Tests\Fixtures\GraphModels\GraphWidget::class,
+            GraphWidget::class,
             $this->graphNodeIds($data)
         );
     }
