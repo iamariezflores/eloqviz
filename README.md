@@ -25,7 +25,7 @@ Available on Packagist: **[eloqviz/laravel-eloquent-viz](https://packagist.org/p
 ## What you get
 
 - **Routes (no route file)** — The service provider **registers routes in code**, so installing the package is enough (`GET /{prefix}` for the UI, `GET /{prefix}/graph` for JSON). You do **not** need to paste routes into `routes/web.php`; adjust **`route_prefix`** and **`middleware`** in config when publishing.
-- **Web UI** — Interactive graph (Cytoscape.js): stable **FQCN node ids**, configurable **labels**, search across label / FQCN / file path, **scan notes** (warnings + skipped relation probes). Selecting a model lists its **table columns** (name and type) and highlights the **foreign keys** that back a relationship. Polymorphic relations are drawn with a **dotted line**.
+- **Web UI** — Interactive graph (Cytoscape.js): stable **FQCN node ids**, configurable **labels**, search across label / FQCN / file path, **scan notes** (warnings + skipped relation probes). Selecting a model lists its **table columns** (name and type) and highlights the **foreign keys** that back a relationship. Polymorphic relations are drawn with a **dotted line**. Dragged node positions are stored in the browser for that focused model and stay put on reload; **Re-layout** replaces them.
 - **JSON (`graphVersion` 2)** — Full graph payload with diagnostics (see below).
 - **Artisan** — `php artisan eloquent:graph` prints the same JSON. Use **`--path=`** repeatedly (or once) to override config directories.
 

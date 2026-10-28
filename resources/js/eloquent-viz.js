@@ -605,6 +605,109 @@ function mountFilters(container, types, onChange) {
     return selected;
 }
 
+const POSITION_STORAGE_PREFIX = 'eloqviz.positions.v1';
+
+/** @param {{ selectedModel?: unknown }|null|undefined} graph */
+function positionStorageKey(graph) {
+    const focused = graph && typeof graph.selectedModel === 'string' ? graph.selectedModel : '';
+    const model = focused !== '' ? focused : '*';
+
+    return `${POSITION_STORAGE_PREFIX}:${location.pathname}:${model}`;
+}
+
+/** @returns {Record<string, {x: number, y: number}>|null} */
+function readStoredPositions(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) {
+            return null;
+        }
+
+        const parsed = JSON.parse(raw);
+        const source = parsed && typeof parsed === 'object' ? parsed.positions : null;
+        if (!source || typeof source !== 'object') {
+            return null;
+        }
+
+        /** @type {Record<string, {x: number, y: number}>} */
+        const positions = {};
+        for (const [id, point] of Object.entries(source)) {
+            if (!point || typeof point !== 'object') {
+                continue;
+            }
+
+            const x = Number(/** @type {{ x?: unknown }} */ (point).x);
+            const y = Number(/** @type {{ y?: unknown }} */ (point).y);
+            if (Number.isFinite(x) && Number.isFinite(y)) {
+                positions[id] = { x, y };
+            }
+        }
+
+        return Object.keys(positions).length > 0 ? positions : null;
+    } catch {
+        return null;
+    }
+}
+
+/** @param {import('cytoscape').Core} cy */
+function writeStoredPositions(key, cy) {
+    if (!key || cy.nodes().empty()) {
+        return;
+    }
+
+    /** @type {Record<string, {x: number, y: number}>} */
+    const positions = {};
+    cy.nodes().forEach((node) => {
+        const point = node.position();
+        if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
+            positions[node.id()] = { x: point.x, y: point.y };
+        }
+    });
+
+    try {
+        localStorage.setItem(key, JSON.stringify({ v: 1, positions }));
+    } catch {
+        // A private window or a full store still leaves the current arrangement on screen.
+    }
+}
+
+/**
+ * Put saved nodes back and park any new model beside them.
+ *
+ * @param {import('cytoscape').Core} cy
+ * @param {Record<string, {x: number, y: number}>} positions
+ * @returns {{ restored: boolean, placedNew: boolean }}
+ */
+function applyStoredPositions(cy, positions) {
+    /** @type {import('cytoscape').NodeSingular[]} */
+    const missing = [];
+    let restored = 0;
+    let maxX = -Infinity;
+
+    cy.nodes().forEach((node) => {
+        const point = positions[node.id()];
+        if (!point) {
+            missing.push(node);
+
+            return;
+        }
+
+        node.position(point);
+        restored += 1;
+        maxX = Math.max(maxX, point.x);
+    });
+
+    if (restored === 0) {
+        return { restored: false, placedNew: false };
+    }
+
+    missing.forEach((node, index) => {
+        node.position({ x: maxX + 180, y: index * 80 });
+    });
+
+    return { restored: true, placedNew: missing.length > 0 };
+}
+
 async function main() {
     const container = document.getElementById('cy');
     const statusEl = document.getElementById('graph-status');
@@ -635,6 +738,8 @@ async function main() {
 
     let selectedTypes = new Set();
     let currentGraph = { nodes: [], edges: [] };
+    let positionStorageKeyCurrent = '';
+    let layoutGeneration = 0;
     const runFilters = () => applyVisibility(cy, selectedTypes, nodeFilterInput?.value ?? '');
 
     const applyTypeFilters = (types) => mountFilters(filterHost, types, (set) => {
@@ -644,7 +749,16 @@ async function main() {
 
     nodeFilterInput?.addEventListener('input', runFilters);
     const runLayout = () => {
-        const onLayoutStop = () => setEdgeGrabPolicy(cy);
+        const generation = ++layoutGeneration;
+        const keyAtStart = positionStorageKeyCurrent;
+        const onLayoutStop = () => {
+            if (generation !== layoutGeneration) {
+                return;
+            }
+
+            setEdgeGrabPolicy(cy);
+            writeStoredPositions(keyAtStart, cy);
+        };
         const rootModel = selectedModelInput?.value ?? '';
         if (rootModel !== '') {
             const layout = cy.layout({
@@ -1016,6 +1130,13 @@ async function main() {
         cy.$(':selected').unselect();
         renderSelection(null);
 
+        layoutGeneration += 1;
+        positionStorageKeyCurrent = positionStorageKey(graph);
+        const stored = readStoredPositions(positionStorageKeyCurrent);
+        const applied = stored
+            ? applyStoredPositions(cy, stored)
+            : { restored: false, placedNew: false };
+
         selectedTypes = applyTypeFilters(relTypes);
         runFilters();
 
@@ -1028,6 +1149,15 @@ async function main() {
 
         const gv = graph.graphVersion != null ? `v${graph.graphVersion} · ` : '';
         statusEl.textContent = `${gv}${graph.nodes?.length ?? 0} models · ${relTypes.length} relationship kinds · ${annotatedEdges.length} edges shown`;
+        if (applied.restored) {
+            cy.fit(cy.elements(), 48);
+            if (applied.placedNew) {
+                writeStoredPositions(positionStorageKeyCurrent, cy);
+            }
+
+            return;
+        }
+
         runLayout();
     };
 
@@ -1035,6 +1165,9 @@ async function main() {
         loadGraph(selectedModelInput.value);
     });
 
+    cy.on('dragfree', 'node', () => {
+        writeStoredPositions(positionStorageKeyCurrent, cy);
+    });
     cy.on('select', 'node, edge', (event) => {
         renderSelection(event.target);
     });
