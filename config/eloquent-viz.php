@@ -79,4 +79,37 @@ return [
 
     'scan_diagnostics' => true,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Polymorphic targets
+    |--------------------------------------------------------------------------
+    |
+    | morphTo has no single related model until a map names the classes that
+    | may appear in the type column. EloqViz draws one edge from the
+    | polymorphic model to each of those classes.
+    |
+    | morph_targets is optional and wins for the methods it lists. Keys are
+    | the polymorphic model's class and the relation method name.
+    |
+    | morph_map uses the same alias => class shape as Relation::morphMap().
+    | Leave it empty to read that registry at scan time. A non-empty morph_map
+    | is used instead of the registry. Every morphTo then points at every
+    | mapped model, so use morph_targets when each relation allows a subset.
+    |
+    */
+
+    'morph_targets' => [
+        // \App\Models\Comment::class => [
+        //     'commentable' => [
+        //         \App\Models\Post::class,
+        //         \App\Models\Video::class,
+        //     ],
+        // ],
+    ],
+
+    'morph_map' => [
+        // 'post' => \App\Models\Post::class,
+        // 'video' => \App\Models\Video::class,
+    ],
+
 ];

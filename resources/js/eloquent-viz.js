@@ -34,15 +34,32 @@ const PALETTE = {
     belongsTo: '#a78bfa',
     hasOne: '#34d399',
     morphMany: '#fb7185',
+    morphOne: '#f472b6',
     morphTo: '#fbbf24',
+    morphToMany: '#fb923c',
+    morphedByMany: '#e879f9',
     default: '#94a3b8',
 };
+
+function isMorphType(type) {
+    return typeof type === 'string' && type.startsWith('morph');
+}
 
 function colorForRelType(type) {
     if (!type) {
         return PALETTE.default;
     }
-    const key = Object.keys(PALETTE).find((k) => type === k || type.startsWith(k));
+    if (PALETTE[type]) {
+        return PALETTE[type];
+    }
+    if (isMorphType(type)) {
+        return PALETTE.morphTo;
+    }
+
+    const key = Object.keys(PALETTE)
+        .filter((name) => name !== 'default' && type.startsWith(name))
+        .sort((left, right) => right.length - left.length)[0];
+
     return key ? PALETTE[key] : PALETTE.default;
 }
 
@@ -75,6 +92,9 @@ function formatSmartLabel(type, smart, count) {
         let m = `morph: ${smart.morphTypeColumn}`;
         if (smart.morphClass) {
             m += ` = ${smart.morphClass}`;
+        }
+        if (smart.morphAlias) {
+            m += ` (${smart.morphAlias})`;
         }
         lines.push(m);
     }
@@ -274,6 +294,7 @@ function buildElements(nodes, annotatedEdges) {
         const smartObj = edge.smart && typeof edge.smart === 'object' ? edge.smart : null;
         elements.push({
             group: 'edges',
+            classes: isMorphType(edge.type) ? 'morph' : '',
             data: {
                 id: String(edge.id),
                 source: String(edge.from ?? ''),
@@ -369,6 +390,13 @@ function stylesheet() {
             },
         },
         {
+            selector: 'edge.morph',
+            style: {
+                'line-style': 'dotted',
+                width: 2.5,
+            },
+        },
+        {
             selector: 'edge:selected',
             style: {
                 width: 3,
@@ -449,8 +477,9 @@ function mountFilters(container, types, onChange) {
         });
 
         const swatch = document.createElement('span');
-        swatch.className = 'ev-swatch';
+        swatch.className = isMorphType(type) ? 'ev-swatch is-morph' : 'ev-swatch';
         swatch.style.backgroundColor = colorForRelType(type);
+        swatch.style.color = colorForRelType(type);
 
         const text = document.createElement('span');
         text.textContent = type;

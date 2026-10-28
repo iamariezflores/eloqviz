@@ -56,6 +56,7 @@
         .ev-filter-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: #e2e8f0; cursor: pointer; }
         .ev-checkbox { width: 1rem; height: 1rem; accent-color: #0ea5e9; }
         .ev-swatch { width: 0.6rem; height: 0.6rem; border-radius: 9999px; flex-shrink: 0; }
+        .ev-swatch.is-morph { width: 1.1rem; height: 0; border-radius: 0; background: transparent !important; border-bottom: 3px dotted currentColor; }
         .ev-btn-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
         .ev-diagnostics { margin-top: 1rem; border: 1px solid #854d0e; border-radius: 0.5rem; background: rgba(120, 53, 15, 0.2); padding: 0.65rem 0.6rem; display: none; min-width: 0; max-height: 14rem; overflow: hidden; flex-direction: column; }
         .ev-diagnostics.is-visible { display: flex; }
@@ -134,7 +135,7 @@
                     </section>
                     <p class="ev-hint">
                         Drag nodes, scroll to zoom, drag the background to pan. Shift-drag to box-select.
-                        Use filters to hide relationship types or narrow models by name. Selecting a model lists its table columns and highlights foreign keys. Selecting a relation shows the full edge text here.
+                        Use filters to hide relationship types or narrow models by name. Dotted lines are polymorphic relations. Selecting a model lists its table columns and highlights foreign keys. Selecting a relation shows the full edge text here.
                     </p>
                 </div>
             </aside>

@@ -3,6 +3,7 @@
 namespace EloqViz\EloquentViz\Tests;
 
 use EloqViz\EloquentViz\EloquentVizServiceProvider;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\File;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -29,6 +30,8 @@ abstract class TestCase extends Orchestra
     protected function setUp(): void
     {
         parent::setUp();
+
+        Relation::morphMap([], false);
 
         $dist = dirname(__DIR__).'/public/dist/eloquent-viz.js';
         if (is_file($dist)) {

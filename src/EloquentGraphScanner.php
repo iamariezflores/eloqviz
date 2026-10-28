@@ -34,6 +34,10 @@ use Throwable;
  * {@see Schema::getColumns()} on the model's connection. Those reads
  * run outside pretend(). Foreign-key columns that back a relationship, and columns reported by
  * {@see Schema::getForeignKeys()}, are flagged for the selection panel.
+ *
+ * morphTo targets come from eloquent-viz.morph_targets, then eloquent-viz.morph_map,
+ * then {@see Relation::morphMap()}. Without a map, the edge is kept with a null target
+ * instead of a self-loop.
  */
 class EloquentGraphScanner
 {
@@ -77,6 +81,7 @@ class EloquentGraphScanner
 
         /** @var list<array{from: string, to: string|null, type: string, smart?: array<string, string>}> $edges */
         $edges = [];
+        $morphTargets = new MorphTargetResolver;
 
         foreach ($scannedFqcns as $fromFqcn) {
             $reflection = new ReflectionClass($fromFqcn);
@@ -102,28 +107,34 @@ class EloquentGraphScanner
                 }
 
                 $toFqcn = $described['targetFqcn'];
-                if ($toFqcn !== null && ! isset($fqcnToFile[$toFqcn]) && ! isset($referencedExternal[$toFqcn])) {
-                    $referencedExternal[$toFqcn] = true;
-                    if ($diagnostics) {
-                        $warnings[] = [
-                            'code' => 'graph.external_model',
-                            'message' => 'Related model is outside configured scan paths: '.$toFqcn,
-                            'target' => $toFqcn,
-                        ];
+                $type = $this->relationTypeToGraph($described['relationBasename']);
+                $smart = $described['smart'];
+
+                if ($type === 'morphTo') {
+                    $targets = $morphTargets->targetsFor($fromFqcn, $method->getName());
+                    if ($targets !== []) {
+                        foreach ($targets as $target) {
+                            $this->rememberExternalModel($target['class'], $fqcnToFile, $referencedExternal, $diagnostics, $warnings);
+                            $edges[] = $this->makeEdge(
+                                $fromFqcn,
+                                $target['class'],
+                                $type,
+                                $this->smartForMorphTarget($smart, $target),
+                            );
+                        }
+
+                        continue;
+                    }
+
+                    if ($toFqcn === null || $toFqcn === $fromFqcn || $toFqcn === Model::class) {
+                        $edges[] = $this->makeEdge($fromFqcn, null, $type, $smart);
+
+                        continue;
                     }
                 }
 
-                $edge = [
-                    'from' => $fromFqcn,
-                    'to' => $toFqcn,
-                    'type' => $this->relationTypeToGraph($described['relationBasename']),
-                ];
-
-                if ($described['smart'] !== []) {
-                    $edge['smart'] = $described['smart'];
-                }
-
-                $edges[] = $edge;
+                $this->rememberExternalModel($toFqcn, $fqcnToFile, $referencedExternal, $diagnostics, $warnings);
+                $edges[] = $this->makeEdge($fromFqcn, $toFqcn, $type, $smart);
             }
         }
 
@@ -554,6 +565,68 @@ class EloquentGraphScanner
     private function relationTypeToGraph(string $relationClassBasename): string
     {
         return lcfirst($relationClassBasename);
+    }
+
+    /**
+     * @param  array<string, string>  $fqcnToFile
+     * @param  array<string, true>  $referencedExternal
+     * @param  list<array{code: string, message: string, target?: string}>  $warnings
+     */
+    private function rememberExternalModel(
+        ?string $fqcn,
+        array $fqcnToFile,
+        array &$referencedExternal,
+        bool $diagnostics,
+        array &$warnings,
+    ): void {
+        if ($fqcn === null || isset($fqcnToFile[$fqcn]) || isset($referencedExternal[$fqcn])) {
+            return;
+        }
+
+        $referencedExternal[$fqcn] = true;
+        if (! $diagnostics) {
+            return;
+        }
+
+        $warnings[] = [
+            'code' => 'graph.external_model',
+            'message' => 'Related model is outside configured scan paths: '.$fqcn,
+            'target' => $fqcn,
+        ];
+    }
+
+    /**
+     * @param  array<string, string>  $smart
+     * @param  array{class: class-string<Model>, alias: string}  $target
+     * @return array<string, string>
+     */
+    private function smartForMorphTarget(array $smart, array $target): array
+    {
+        $smart['morphClass'] = class_basename($target['class']);
+        if ($target['alias'] !== '' && $target['alias'] !== $target['class']) {
+            $smart['morphAlias'] = $target['alias'];
+        }
+
+        return $smart;
+    }
+
+    /**
+     * @param  array<string, string>  $smart
+     * @return array{from: string, to: string|null, type: string, smart?: array<string, string>}
+     */
+    private function makeEdge(string $from, ?string $to, string $type, array $smart): array
+    {
+        $edge = [
+            'from' => $from,
+            'to' => $to,
+            'type' => $type,
+        ];
+
+        if ($smart !== []) {
+            $edge['smart'] = $smart;
+        }
+
+        return $edge;
     }
 
     /**
