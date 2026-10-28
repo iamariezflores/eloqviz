@@ -143,12 +143,13 @@ function edgeMultiplicityWeight(e) {
 function mergeAndAnnotateEdges(graph) {
     const raw = (graph.edges ?? []).filter((e) => e.to != null && e.type);
 
-    /** @type {Map<string, { from: string, to: string, type: string, count: number, apiMax: number, smart?: Record<string, string> }>} */
+    /** @type {Map<string, { from: string, to: string, type: string, count: number, apiMax: number, smart?: Record<string, string>, methods: Record<string, unknown>[] }>} */
     const mergeMap = new Map();
     for (const e of raw) {
         const k = `${e.from}\0${e.to}\0${e.type}`;
         const apiM = Number(e.multiplicity);
         const apiFloor = Number.isFinite(apiM) && apiM >= 1 ? Math.floor(apiM) : 1;
+        const methods = normalizeMethods(e.methods);
 
         if (!mergeMap.has(k)) {
             mergeMap.set(k, {
@@ -158,10 +159,12 @@ function mergeAndAnnotateEdges(graph) {
                 count: 0,
                 apiMax: apiFloor,
                 smart: e.smart && typeof e.smart === 'object' ? { ...e.smart } : undefined,
+                methods,
             });
         } else {
             const row = mergeMap.get(k);
             row.apiMax = Math.max(row.apiMax, apiFloor);
+            row.methods = mergeMethodLists(row.methods, methods);
         }
 
         mergeMap.get(k).count += edgeMultiplicityWeight(e);
@@ -199,6 +202,32 @@ function mergeAndAnnotateEdges(graph) {
     }));
 }
 
+/** @param {unknown} value */
+function normalizeMethods(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.filter((method) => method && typeof method === 'object' && 'name' in method);
+}
+
+/**
+ * @param {Record<string, unknown>[]} left
+ * @param {Record<string, unknown>[]} right
+ */
+function mergeMethodLists(left, right) {
+    /** @type {Map<string, Record<string, unknown>>} */
+    const seen = new Map();
+    for (const method of [...left, ...right]) {
+        const key = `${method.name ?? ''}\0${method.file ?? ''}\0${method.line ?? ''}`;
+        if (!seen.has(key)) {
+            seen.set(key, method);
+        }
+    }
+
+    return [...seen.values()];
+}
+
 function escapeHtml(value) {
     return String(value)
         .replace(/&/g, '&amp;')
@@ -234,6 +263,57 @@ function columnSectionHtml(record) {
     }
 
     return `<dt>Table</dt><dd>${tableHtml}</dd><dt>Columns</dt><dd>${columnsHtml}</dd>`;
+}
+
+/**
+ * File row for a model. The path becomes an editor link when editorUrl is present.
+ *
+ * @param {Record<string, unknown>|null|undefined} record
+ * @param {string} fallbackFile
+ */
+function fileSectionHtml(record, fallbackFile) {
+    const file = String(record?.file ?? fallbackFile ?? '');
+    const editorUrl = String(record?.editorUrl ?? '');
+    const line = Number(record?.line);
+    if (file === '' && editorUrl === '') {
+        return '';
+    }
+
+    const label = file !== '' ? file : 'Open in editor';
+    const body = editorUrl !== ''
+        ? `<a class="ev-ide-link" href="${escapeHtml(editorUrl)}">${escapeHtml(label)}</a>`
+        : `<code class="ev-code">${escapeHtml(label)}</code>`;
+    const lineHtml = Number.isFinite(line) && line > 0
+        ? `<span class="ev-ide-line">line ${escapeHtml(line)}</span>`
+        : '';
+
+    return `<dt>File</dt><dd>${body}${lineHtml}</dd>`;
+}
+
+/** @param {unknown} methods */
+function methodSectionHtml(methods) {
+    const rows = normalizeMethods(methods);
+    if (rows.length === 0) {
+        return '';
+    }
+
+    const items = rows.map((method) => {
+        const name = `${String(method.name ?? '')}()`;
+        const editorUrl = String(method.editorUrl ?? '');
+        const line = Number(method.line);
+        const file = String(method.file ?? '');
+        const body = editorUrl !== ''
+            ? `<a class="ev-ide-link" href="${escapeHtml(editorUrl)}">${escapeHtml(name)}</a>`
+            : `<code class="ev-code">${escapeHtml(name)}</code>`;
+        const meta = [
+            Number.isFinite(line) && line > 0 ? `line ${line}` : '',
+            file,
+        ].filter(Boolean).map((part) => escapeHtml(part)).join(' · ');
+
+        return `<li>${body}${meta !== '' ? `<span class="ev-ide-line">${meta}</span>` : ''}</li>`;
+    }).join('');
+
+    return `<dt>Methods</dt><dd><ul class="ev-ide-methods">${items}</ul></dd>`;
 }
 
 /** @param {unknown} column */
@@ -303,6 +383,7 @@ function buildElements(nodes, annotatedEdges) {
                 label: String(edge.label ?? ''),
                 multiplicity: Number(edge.displayCount) || 1,
                 smartJson: smartObj ? JSON.stringify(smartObj) : '',
+                methodsJson: Array.isArray(edge.methods) && edge.methods.length > 0 ? JSON.stringify(edge.methods) : '',
                 cpDistance: Number(edge.cpDistance) || 0,
                 cpWeight: Number(edge.cpWeight) || 0.5,
                 textMarginY: Number(edge.textMarginY) || 0,
@@ -670,7 +751,7 @@ async function main() {
                     <dt>Type</dt><dd>Model</dd>
                     <dt>Label</dt><dd>${esc(shortLabel)}</dd>
                     <dt>FQCN</dt><dd><code class="ev-code">${esc(fqcn)}</code></dd>
-                    ${file ? `<dt>File</dt><dd><code class="ev-code">${esc(file)}</code></dd>` : ''}
+                    ${fileSectionHtml(nodeRecord, file)}
                     ${columnSectionHtml(nodeRecord)}
                     <dt>References other models</dt><dd>${stats.outgoingModels.length}</dd>
                     <dt>Referenced by other models</dt><dd>${stats.incomingModels.length}</dd>
@@ -753,7 +834,19 @@ async function main() {
                 })
                 .join('');
 
-            selectionDetails.innerHTML = `<dl class="ev-selection-grid">${html}</dl>`;
+            let methods = [];
+            if (typeof data.methodsJson === 'string' && data.methodsJson !== '') {
+                try {
+                    const parsed = JSON.parse(data.methodsJson);
+                    if (Array.isArray(parsed)) {
+                        methods = parsed;
+                    }
+                } catch {
+                    methods = [];
+                }
+            }
+
+            selectionDetails.innerHTML = `<dl class="ev-selection-grid">${html}${methodSectionHtml(methods)}</dl>`;
         }
     };
 

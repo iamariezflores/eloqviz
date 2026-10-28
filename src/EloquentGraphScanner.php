@@ -38,6 +38,8 @@ use Throwable;
  * morphTo targets come from eloquent-viz.morph_targets, then eloquent-viz.morph_map,
  * then {@see Relation::morphMap()}. Without a map, the edge is kept with a null target
  * instead of a self-loop.
+ *
+ * When eloquent-viz.ide is set, nodes and relation methods include an editorUrl for that file and line.
  */
 class EloquentGraphScanner
 {
@@ -79,9 +81,10 @@ class EloquentGraphScanner
         /** @var array<string, true> $referencedExternal */
         $referencedExternal = [];
 
-        /** @var list<array{from: string, to: string|null, type: string, smart?: array<string, string>}> $edges */
+        /** @var list<array{from: string, to: string|null, type: string, smart?: array<string, string>, methods?: list<array{name: string, file?: string, line?: int, editorUrl?: string}>}> $edges */
         $edges = [];
         $morphTargets = new MorphTargetResolver;
+        $editorLinks = new EditorLink;
 
         foreach ($scannedFqcns as $fromFqcn) {
             $reflection = new ReflectionClass($fromFqcn);
@@ -109,6 +112,7 @@ class EloquentGraphScanner
                 $toFqcn = $described['targetFqcn'];
                 $type = $this->relationTypeToGraph($described['relationBasename']);
                 $smart = $described['smart'];
+                $methods = [$this->edgeMethod($method, $editorLinks)];
 
                 if ($type === 'morphTo') {
                     $targets = $morphTargets->targetsFor($fromFqcn, $method->getName());
@@ -120,6 +124,7 @@ class EloquentGraphScanner
                                 $target['class'],
                                 $type,
                                 $this->smartForMorphTarget($smart, $target),
+                                $methods,
                             );
                         }
 
@@ -127,14 +132,14 @@ class EloquentGraphScanner
                     }
 
                     if ($toFqcn === null || $toFqcn === $fromFqcn || $toFqcn === Model::class) {
-                        $edges[] = $this->makeEdge($fromFqcn, null, $type, $smart);
+                        $edges[] = $this->makeEdge($fromFqcn, null, $type, $smart, $methods);
 
                         continue;
                     }
                 }
 
                 $this->rememberExternalModel($toFqcn, $fqcnToFile, $referencedExternal, $diagnostics, $warnings);
-                $edges[] = $this->makeEdge($fromFqcn, $toFqcn, $type, $smart);
+                $edges[] = $this->makeEdge($fromFqcn, $toFqcn, $type, $smart, $methods);
             }
         }
 
@@ -147,7 +152,7 @@ class EloquentGraphScanner
         /** @var list<array{id: string, label: string, fqcn: string, file?: string}> $nodeRows */
         $nodeRows = [];
         foreach ($nodeIds as $id) {
-            $nodeRows[] = $this->buildNodeDescriptor($id, $fqcnToFile[$id] ?? null, $basenameDupes);
+            $nodeRows[] = $this->buildNodeDescriptor($id, $fqcnToFile[$id] ?? null, $basenameDupes, $editorLinks);
         }
 
         $resolution = $this->resolveSelectedModelId(
@@ -466,9 +471,9 @@ class EloquentGraphScanner
 
     /**
      * @param  list<string>  $basenameDupes  basenames that appear more than once in the graph
-     * @return array{id: string, label: string, fqcn: string, file?: string}
+     * @return array{id: string, label: string, fqcn: string, file?: string, line?: int, editorUrl?: string}
      */
-    private function buildNodeDescriptor(string $fqcn, ?string $absoluteFile, array $basenameDupes): array
+    private function buildNodeDescriptor(string $fqcn, ?string $absoluteFile, array $basenameDupes, EditorLink $editorLinks): array
     {
         $mode = $this->nodeDisplayMode();
         $row = [
@@ -477,11 +482,30 @@ class EloquentGraphScanner
             'label' => $this->computeNodeLabel($fqcn, $mode, $basenameDupes),
         ];
 
-        if ($this->includeFilePaths() && $absoluteFile !== null && $absoluteFile !== '') {
+        $line = $this->classStartLine($fqcn);
+        if (($absoluteFile === null || $absoluteFile === '') && class_exists($fqcn)) {
+            try {
+                $reflected = (new ReflectionClass($fqcn))->getFileName();
+                $absoluteFile = is_string($reflected) && $reflected !== '' ? $reflected : $absoluteFile;
+            } catch (Throwable) {
+                $absoluteFile = null;
+            }
+        }
+
+        if ($this->includeFilePaths() && is_string($absoluteFile) && $absoluteFile !== '') {
             $rel = $this->relativizeToBasePath($absoluteFile);
             if ($rel !== '') {
                 $row['file'] = $rel;
             }
+        }
+
+        if ($line !== null) {
+            $row['line'] = $line;
+        }
+
+        $editorUrl = $editorLinks->url(is_string($absoluteFile) ? $absoluteFile : null, $line);
+        if ($editorUrl !== null) {
+            $row['editorUrl'] = $editorUrl;
         }
 
         return $row;
@@ -548,12 +572,23 @@ class EloquentGraphScanner
             }
 
             $byKey[$key]['multiplicity']++;
+            $byKey[$key]['methods'] = $this->mergeEdgeMethods(
+                $byKey[$key]['methods'] ?? [],
+                $edge['methods'] ?? [],
+            );
         }
 
         $out = [];
         foreach ($byKey as $edge) {
             if ($edge['multiplicity'] === 1) {
                 unset($edge['multiplicity']);
+            }
+
+            if (isset($edge['methods']) && is_array($edge['methods'])) {
+                $edge['methods'] = $this->mergeEdgeMethods($edge['methods'], []);
+                if ($edge['methods'] === []) {
+                    unset($edge['methods']);
+                }
             }
 
             $out[] = $edge;
@@ -612,9 +647,10 @@ class EloquentGraphScanner
 
     /**
      * @param  array<string, string>  $smart
-     * @return array{from: string, to: string|null, type: string, smart?: array<string, string>}
+     * @param  list<array{name: string, file?: string, line?: int, editorUrl?: string}>  $methods
+     * @return array{from: string, to: string|null, type: string, smart?: array<string, string>, methods?: list<array{name: string, file?: string, line?: int, editorUrl?: string}>}
      */
-    private function makeEdge(string $from, ?string $to, string $type, array $smart): array
+    private function makeEdge(string $from, ?string $to, string $type, array $smart, array $methods): array
     {
         $edge = [
             'from' => $from,
@@ -626,7 +662,92 @@ class EloquentGraphScanner
             $edge['smart'] = $smart;
         }
 
+        if ($methods !== []) {
+            $edge['methods'] = $methods;
+        }
+
         return $edge;
+    }
+
+    /**
+     * @return array{name: string, file?: string, line?: int, editorUrl?: string}
+     */
+    private function edgeMethod(ReflectionMethod $method, EditorLink $editorLinks): array
+    {
+        $row = [
+            'name' => $method->getName(),
+        ];
+
+        $absolute = $method->getFileName();
+        $absolute = is_string($absolute) && $absolute !== '' ? $absolute : null;
+        $start = $method->getStartLine();
+        $line = is_int($start) && $start > 0 ? $start : null;
+
+        if ($this->includeFilePaths() && $absolute !== null) {
+            $relative = $this->relativizeToBasePath($absolute);
+            if ($relative !== '') {
+                $row['file'] = $relative;
+            }
+        }
+
+        if ($line !== null) {
+            $row['line'] = $line;
+        }
+
+        $editorUrl = $editorLinks->url($absolute, $line);
+        if ($editorUrl !== null) {
+            $row['editorUrl'] = $editorUrl;
+        }
+
+        return $row;
+    }
+
+    private function classStartLine(string $fqcn): ?int
+    {
+        if (! class_exists($fqcn)) {
+            return null;
+        }
+
+        try {
+            $start = (new ReflectionClass($fqcn))->getStartLine();
+        } catch (Throwable) {
+            return null;
+        }
+
+        return is_int($start) && $start > 0 ? $start : null;
+    }
+
+    /**
+     * @param  list<array{name: string, file?: string, line?: int, editorUrl?: string}>  $current
+     * @param  list<array{name: string, file?: string, line?: int, editorUrl?: string}>  $incoming
+     * @return list<array{name: string, file?: string, line?: int, editorUrl?: string}>
+     */
+    private function mergeEdgeMethods(array $current, array $incoming): array
+    {
+        $seen = [];
+        $methods = [];
+
+        foreach (array_merge($current, $incoming) as $method) {
+            $name = $method['name'] ?? '';
+            if ($name === '') {
+                continue;
+            }
+
+            $key = $name."\0".($method['file'] ?? '')."\0".($method['line'] ?? '');
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $methods[] = $method;
+        }
+
+        usort(
+            $methods,
+            static fn (array $left, array $right): int => [$left['name'], $left['line'] ?? 0] <=> [$right['name'], $right['line'] ?? 0]
+        );
+
+        return $methods;
     }
 
     /**
