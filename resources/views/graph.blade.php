@@ -140,7 +140,7 @@
                     </section>
                     <p class="ev-hint">
                         Drag nodes, scroll to zoom, drag the background to pan. Shift-drag to box-select.
-                        Use filters to hide relationship types or narrow models by name. Dotted lines are polymorphic relations. Selecting a model lists its table columns and highlights foreign keys. When an editor is configured, the file and each relation method open at that line.
+                        Drag nodes to arrange the graph. This browser keeps that arrangement until you choose Re-layout. Dotted lines are polymorphic relations. Selecting a model lists its table columns and highlights foreign keys. When an editor is configured, the file and each relation method open at that line.
                     </p>
                 </div>
             </aside>
