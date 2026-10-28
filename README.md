@@ -25,7 +25,7 @@ Available on Packagist: **[eloqviz/laravel-eloquent-viz](https://packagist.org/p
 ## What you get
 
 - **Routes (no route file)** — The service provider **registers routes in code**, so installing the package is enough (`GET /{prefix}` for the UI, `GET /{prefix}/graph` for JSON). You do **not** need to paste routes into `routes/web.php`; adjust **`route_prefix`** and **`middleware`** in config when publishing.
-- **Web UI** — Interactive graph (Cytoscape.js): stable **FQCN node ids**, configurable **labels**, search across label / FQCN / file path, **scan notes** (warnings + skipped relation probes). Selecting a model lists its **table columns** (name and type) and highlights the **foreign keys** that back a relationship.
+- **Web UI** — Interactive graph (Cytoscape.js): stable **FQCN node ids**, configurable **labels**, search across label / FQCN / file path, **scan notes** (warnings + skipped relation probes). Selecting a model lists its **table columns** (name and type) and highlights the **foreign keys** that back a relationship. Polymorphic relations are drawn with a **dotted line**.
 - **JSON (`graphVersion` 2)** — Full graph payload with diagnostics (see below).
 - **Artisan** — `php artisan eloquent:graph` prints the same JSON. Use **`--path=`** repeatedly (or once) to override config directories.
 
@@ -63,6 +63,8 @@ When **`APP_ENV=production`**, EloqViz **does not register** HTTP routes or the 
 | `include_file_paths` | When true, each node includes a `file` path (relative to the app root when under `base_path()`, otherwise absolute). |
 | `include_columns` | When true (default), each node includes `table`, `schemaStatus` (`ok`, `missing_table`, or `unavailable`), and `columns` from `Schema::getColumns()`. |
 | `scan_diagnostics` | When true, populate `warnings` and `skippedRelations` (e.g. declared relation return type but runtime did not return a `Relation`). |
+| `morph_map` | Alias-to-class map, same shape as `Relation::morphMap()`. Empty uses that registry at scan time. A non-empty value replaces the registry and connects every `morphTo` to every mapped model. |
+| `morph_targets` | Optional per-method targets. Keys are the polymorphic model class and the relation method. When a method is listed, only those classes are drawn for it. |
 
 Configuration is **PHP only** (no `.env` keys from this package).
 
@@ -83,7 +85,7 @@ Configuration is **PHP only** (no `.env` keys from this package).
 
 - **`graphVersion`**: `2`
 - **`nodes`**: `[{ "id": "<fqcn>", "label": "<display>", "fqcn": "<fqcn>", "file": "<optional relative path>", "table": "posts", "schemaStatus": "ok", "columns": [{ "name": "user_id", "type": "bigint unsigned", "nullable": false, "foreignKey": true, "relations": ["belongsTo User"] }] }]`. `columns` is omitted when `include_columns` is false. `foreignKey` is true only for columns that back a relationship or a database foreign key.
-- **`edges`**: `[{ "from": "<fqcn>", "to": "<fqcn|null>", "type": "belongsTo", "smart": { ... }, "multiplicity"?: n }]`
+- **`edges`**: `[{ "from": "<fqcn>", "to": "<fqcn|null>", "type": "belongsTo", "smart": { ... }, "multiplicity"?: n }]`. Polymorphic edges (`morphTo`, `morphOne`, `morphMany`, `morphToMany`, `morphedByMany`) are drawn with a dotted line. A resolved `morphTo` includes `smart.morphClass` and, when the map uses an alias, `smart.morphAlias`. `to` is `null` when a `morphTo` has no map entry.
 - **`warnings`**: `[{ "code": "...", "message": "...", ... }]`, e.g. `graph.external_model` when a related class is outside `models_paths`, or `graph.ambiguous_basename` / `graph.ambiguous_default_user` when `?model=` or default `User` focus is ambiguous.
 - **`skippedRelations`**: `[{ "model": "<declaring fqcn>", "method": "...", "reason": "..." }]` for methods that advertise a relation return type but do not yield a `Relation` at runtime.
 - **`availableModels`** (HTTP only): `[{ "id": "<fqcn>", "label": "<display>" }]` for the root-model dropdown (full scan, no component filter).
@@ -109,6 +111,7 @@ The graph is **best-effort static + one guarded call per candidate method** unde
 - **Abstract** base `Model` classes are not listed as nodes.
 - Relations defined **only** outside model methods (raw query builders, arbitrary PHP) will not appear as edges.
 - **Columns** require the model’s table on its connection. `schemaStatus` is `missing_table` or `unavailable` when schema inspection cannot read them; the rest of the graph still loads.
+- **Polymorphic targets** are not inferred from rows in the type column. They come from `morph_targets`, `morph_map`, or `Relation::morphMap()`. A global map does not know which subset each relation allows.
 
 If you need a line in your internal docs: **“EloqViz shows the Eloquent surface of the codebase you configured to scan—not the full business or database story.”**
 
