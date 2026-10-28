@@ -65,6 +65,9 @@ When **`APP_ENV=production`**, EloqViz **does not register** HTTP routes or the 
 | `scan_diagnostics` | When true, populate `warnings` and `skippedRelations` (e.g. declared relation return type but runtime did not return a `Relation`). |
 | `morph_map` | Alias-to-class map, same shape as `Relation::morphMap()`. Empty uses that registry at scan time. A non-empty value replaces the registry and connects every `morphTo` to every mapped model. |
 | `morph_targets` | Optional per-method targets. Keys are the polymorphic model class and the relation method. When a method is listed, only those classes are drawn for it. |
+| `ide` | Editor for file links. `null` (default), `cursor`, `vscode`, `phpstorm`, or `custom`. |
+| `ide_url` | URL template used when `ide` is `custom`. Placeholders: `{path}`, `{path_encoded}`, `{line}`, `{column}`. |
+| `project_root` | Host directory that replaces `base_path()` in editor links. Leave `null` when the app path is the path the editor has open. |
 
 Configuration is **PHP only** (no `.env` keys from this package).
 
@@ -84,8 +87,8 @@ Configuration is **PHP only** (no `.env` keys from this package).
 ### Payload shape
 
 - **`graphVersion`**: `2`
-- **`nodes`**: `[{ "id": "<fqcn>", "label": "<display>", "fqcn": "<fqcn>", "file": "<optional relative path>", "table": "posts", "schemaStatus": "ok", "columns": [{ "name": "user_id", "type": "bigint unsigned", "nullable": false, "foreignKey": true, "relations": ["belongsTo User"] }] }]`. `columns` is omitted when `include_columns` is false. `foreignKey` is true only for columns that back a relationship or a database foreign key.
-- **`edges`**: `[{ "from": "<fqcn>", "to": "<fqcn|null>", "type": "belongsTo", "smart": { ... }, "multiplicity"?: n }]`. Polymorphic edges (`morphTo`, `morphOne`, `morphMany`, `morphToMany`, `morphedByMany`) are drawn with a dotted line. A resolved `morphTo` includes `smart.morphClass` and, when the map uses an alias, `smart.morphAlias`. `to` is `null` when a `morphTo` has no map entry.
+- **`nodes`**: `[{ "id": "<fqcn>", "label": "<display>", "fqcn": "<fqcn>", "file": "<optional relative path>", "line": 12, "editorUrl": "<optional>", "table": "posts", "schemaStatus": "ok", "columns": [{ "name": "user_id", "type": "bigint unsigned", "nullable": false, "foreignKey": true, "relations": ["belongsTo User"] }] }]`. `columns` is omitted when `include_columns` is false. `foreignKey` is true only for columns that back a relationship or a database foreign key. `line` is the class declaration. `editorUrl` is present only when `ide` is configured.
+- **`edges`**: `[{ "from": "<fqcn>", "to": "<fqcn|null>", "type": "belongsTo", "smart": { ... }, "methods": [{ "name": "user", "file": "...", "line": 18, "editorUrl": "<optional>" }], "multiplicity"?: n }]`. Polymorphic edges (`morphTo`, `morphOne`, `morphMany`, `morphToMany`, `morphedByMany`) are drawn with a dotted line. A resolved `morphTo` includes `smart.morphClass` and, when the map uses an alias, `smart.morphAlias`. `to` is `null` when a `morphTo` has no map entry. A deduped edge lists every method.
 - **`warnings`**: `[{ "code": "...", "message": "...", ... }]`, e.g. `graph.external_model` when a related class is outside `models_paths`, or `graph.ambiguous_basename` / `graph.ambiguous_default_user` when `?model=` or default `User` focus is ambiguous.
 - **`skippedRelations`**: `[{ "model": "<declaring fqcn>", "method": "...", "reason": "..." }]` for methods that advertise a relation return type but do not yield a `Relation` at runtime.
 - **`availableModels`** (HTTP only): `[{ "id": "<fqcn>", "label": "<display>" }]` for the root-model dropdown (full scan, no component filter).
@@ -112,6 +115,7 @@ The graph is **best-effort static + one guarded call per candidate method** unde
 - Relations defined **only** outside model methods (raw query builders, arbitrary PHP) will not appear as edges.
 - **Columns** require the model’s table on its connection. `schemaStatus` is `missing_table` or `unavailable` when schema inspection cannot read them; the rest of the graph still loads.
 - **Polymorphic targets** are not inferred from rows in the type column. They come from `morph_targets`, `morph_map`, or `Relation::morphMap()`. A global map does not know which subset each relation allows.
+- **Editor links** open a file on the machine where the browser and the editor are installed. A container `base_path()` needs `project_root` set to the host directory the editor has open.
 
 If you need a line in your internal docs: **“EloqViz shows the Eloquent surface of the codebase you configured to scan—not the full business or database story.”**
 

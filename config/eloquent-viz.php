@@ -112,4 +112,27 @@ return [
         // 'video' => \App\Models\Video::class,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Editor links
+    |--------------------------------------------------------------------------
+    |
+    | When ide is set, the selection panel links a model and each relation
+    | method to that file and line. Presets: cursor, vscode, phpstorm.
+    | custom uses ide_url. Placeholders: {path}, {path_encoded}, {line}, {column}.
+    | {path} keeps a Windows drive colon and encodes the rest. {path_encoded}
+    | is the whole path passed through rawurlencode, which PhpStorm expects.
+    |
+    | project_root replaces the application's base path for files inside it.
+    | Leave it null when the browser and the code are on the same machine.
+    | Set it to the host directory when base_path() is a container path.
+    |
+    */
+
+    'ide' => null,
+
+    'ide_url' => 'cursor://file/{path}:{line}:{column}',
+
+    'project_root' => null,
+
 ];

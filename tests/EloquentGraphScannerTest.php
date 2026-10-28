@@ -594,6 +594,7 @@ PHP;
     {
         $out = [];
         foreach ($edges as $edge) {
+            unset($edge['methods']);
             $key = $edge['from'].'|'.($edge['to'] ?? 'null').'|'.$edge['type'];
             $out[$key] = $edge;
         }
