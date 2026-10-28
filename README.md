@@ -80,6 +80,33 @@ Configuration is **PHP only** (no `.env` keys from this package).
 ],
 ```
 
+### Editor links
+
+`ide` is `null` until you choose one. `cursor`, `vscode`, and `phpstorm` are built in. Any other editor uses `custom` and an `ide_url` template. The template must contain `{path}` or `{path_encoded}`.
+
+| Placeholder | Becomes |
+|-------------|---------|
+| `{path}` | Absolute path with forward slashes. A Windows drive colon stays (`C:`). Spaces and other characters in each segment are encoded. |
+| `{path_encoded}` | That same path passed through `rawurlencode`, so slashes become `%2F`. Use this inside a query string. |
+| `{line}` | 1-based line of the class or relation method. |
+| `{column}` | Always `1`. |
+
+Zed, for example, has no preset. Its file URL is the same shape as Cursor:
+
+```php
+'ide' => 'custom',
+'ide_url' => 'zed://file/{path}:{line}:{column}',
+```
+
+An editor that takes the file as a query parameter uses the encoded path:
+
+```php
+'ide' => 'custom',
+'ide_url' => 'myeditor://open?file={path_encoded}&line={line}',
+```
+
+Clicking the link asks the browser to open that protocol, so the editor has to be installed on the same machine and registered for that scheme. A container path needs `project_root` set to the directory the editor has open.
+
 ## JSON API (`GET {prefix}/graph`, `eloquent:graph`)
 
 **`graphVersion`** is `2`. Breaking change from older builds: **`nodes` are objects**, **`edges.from` / `edges.to`** are **FQCNs** (same as node `id`), not short class names.
